@@ -9,7 +9,7 @@ const host = process.env.PI_MONITOR_HOST;
 
 test("Pi loads the extension, renders the viewer, and queues completion", {
   skip: !host && "Set PI_MONITOR_HOST to your installed Pi package directory",
-  timeout: 5000,
+  timeout: 10000,
 }, async () => {
   const { loadExtensions } = await import(pathToFileURL(`${host}/dist/core/extensions/loader.js`).href);
   const hostRequire = createRequire(`${host}/package.json`);
@@ -116,6 +116,10 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     checkMessageRendering(messages[0].message, "done");
     assert.deepEqual(widget.render(80), []);
     assert.match((await execute({ action: "status" })).content[0].text, /completed/);
+    const finishedCheck = await execute({ action: "status", id: "1", checkAfterSeconds: 1 });
+    assert.match(finishedCheck.content[0].text, /No check-in scheduled/);
+    await assert.rejects(execute({ action: "status", checkAfterSeconds: 1 }), /id is required/);
+    await assert.rejects(execute({ action: "status", id: "missing", checkAfterSeconds: 1 }), /Unknown monitor/);
     await execute({ action: "start", command: "sleep 30" });
     assert.match(widget.render(80)[0], /#2.*running/);
     await execute({ action: "stop", id: "2" });
@@ -146,6 +150,16 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     assert.match(messages[1].message.content, /Scheduled check-in:[\s\S]*running[\s\S]*progress/);
     assert.deepEqual(messages[1].options, { triggerTurn: true, deliverAs: "followUp" });
     checkMessageRendering(messages[1].message, "progress");
+    await assert.rejects(execute({ action: "stop", id: "1", checkAfterSeconds: 1 }), /only supported/);
+    await execute({ action: "status", id: "1", checkAfterSeconds: 60 });
+    const rearmed = await execute({ action: "status", id: "1", checkAfterSeconds: 1 });
+    assert.match(rearmed.content[0].text, /progress[\s\S]*pending reminder was replaced/);
+    await execute({ action: "status", id: "1" });
+    assert.equal((await execute({ action: "status" })).content[0].text.split("\n").length, 1);
+    while (messages.length < 3) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(messages[2].message.customType, "monitor-check");
+    assert.match(messages[2].message.content, /Monitor 1:[\s\S]*progress/);
+    assert.deepEqual(messages[2].options, { triggerTurn: true, deliverAs: "followUp" });
     interact = async (component) => {
       const tail = component.render(80);
       assert.match(tail.join("\n"), /line-40/);
@@ -177,6 +191,6 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     };
     await extension.commands.get("monitors").handler("", ctx);
     await execute({ action: "stop", id: "1" });
-    assert.equal(messages.length, 2);
+    assert.equal(messages.length, 3);
   } finally { await dispatch("session_shutdown"); }
 });

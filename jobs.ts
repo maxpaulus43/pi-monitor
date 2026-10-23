@@ -26,6 +26,13 @@ export function clean(text: string) {
   return stripVTControlCharacters(text).replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
+function validateCheckDelay(seconds: number) {
+  // Node timers overflow above 2^31 - 1 milliseconds.
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 2147483) {
+    throw new Error("checkAfterSeconds must be an integer between 1 and 2147483");
+  }
+}
+
 export class Jobs {
   jobs = new Map<string, Job>();
   onFinish: (job: Job) => void;
@@ -42,11 +49,7 @@ export class Jobs {
     if (this.closed) throw new Error("Monitor session is closed");
     if (process.platform === "win32") throw new Error("Monitor requires macOS or Linux");
     if (!command.trim()) throw new Error("Command must not be empty");
-    // Node timers overflow above 2^31 - 1 milliseconds.
-    if (checkAfterSeconds !== undefined &&
-        (!Number.isInteger(checkAfterSeconds) || checkAfterSeconds < 1 || checkAfterSeconds > 2147483)) {
-      throw new Error("checkAfterSeconds must be an integer between 1 and 2147483");
-    }
+    if (checkAfterSeconds !== undefined) validateCheckDelay(checkAfterSeconds);
     const job: Job = {
       id: String(this.nextId++), command, cwd, title,
       status: "running", output: "", truncated: false, started: Date.now(),
@@ -79,12 +82,20 @@ export class Jobs {
         resolve();
       });
     });
-    if (checkAfterSeconds !== undefined) {
-      job.checkTimer = setTimeout(() => {
-        if (!this.closed && job.status === "running" && !job.stopping) this.onCheck(job);
-      }, checkAfterSeconds * 1000);
-    }
+    if (checkAfterSeconds !== undefined) this.scheduleCheck(job.id, checkAfterSeconds);
     return job;
+  }
+
+  scheduleCheck(id: string, seconds: number) {
+    if (this.closed) throw new Error("Monitor session is closed");
+    validateCheckDelay(seconds);
+    const job = this.get(id);
+    clearTimeout(job.checkTimer);
+    if (job.status !== "running" || job.stopping) return false;
+    job.checkTimer = setTimeout(() => {
+      if (!this.closed && job.status === "running" && !job.stopping) this.onCheck(job);
+    }, seconds * 1000);
+    return true;
   }
 
   get(id: string) {

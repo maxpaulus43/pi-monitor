@@ -86,6 +86,62 @@ test("scheduled check-in fires once while running; omitted delay stays silent", 
   }
 });
 
+test("check-ins can be replaced and rearmed without restarting the job", async (t) => {
+  const checks = [];
+  const jobs = new Jobs(undefined, (job) => checks.push(job.id));
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const job = jobs.start("sleep 30", cwd, "long job", 10);
+    const child = job.child;
+    t.mock.timers.tick(5000);
+    assert.equal(jobs.scheduleCheck(job.id, 20), true);
+    t.mock.timers.tick(5000);
+    assert.deepEqual(checks, []);
+    t.mock.timers.tick(14999);
+    assert.deepEqual(checks, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(checks, [job.id]);
+    assert.equal(jobs.scheduleCheck(job.id, 5), true);
+    t.mock.timers.tick(5000);
+    assert.deepEqual(checks, [job.id, job.id]);
+    t.mock.timers.tick(30000);
+    assert.deepEqual(checks, [job.id, job.id]);
+    assert.equal(jobs.jobs.size, 1);
+    assert.equal(job.child, child);
+  } finally {
+    t.mock.timers.reset();
+    await jobs.close();
+  }
+});
+
+test("invalid rescheduling preserves reminders; finished jobs cannot be rearmed", async (t) => {
+  const checks = [];
+  const jobs = new Jobs(undefined, (job) => checks.push(job.id));
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const job = jobs.start("sleep 30", cwd, "long job", 10);
+    for (const seconds of [0, -1, 0.5, NaN, Infinity, 2147484]) {
+      assert.throws(() => jobs.scheduleCheck(job.id, seconds), /checkAfterSeconds/);
+    }
+    assert.throws(() => jobs.scheduleCheck("missing", 10), /Unknown monitor/);
+    t.mock.timers.tick(10000);
+    assert.deepEqual(checks, [job.id]);
+    const finished = jobs.start("true", cwd);
+    await finished.done;
+    assert.equal(jobs.scheduleCheck(finished.id, 10), false);
+    t.mock.timers.tick(10000);
+    assert.deepEqual(checks, [job.id]);
+  } finally {
+    t.mock.timers.reset();
+    const job = [...jobs.jobs.values()][0];
+    const stopping = jobs.stop(job.id);
+    assert.equal(jobs.scheduleCheck(job.id, 10), false);
+    await stopping;
+    await jobs.close();
+  }
+  assert.throws(() => jobs.scheduleCheck("1", 10), /closed/);
+});
+
 test("completion, cancellation, and shutdown cancel pending check-ins", async (t) => {
   const checks = [];
   const jobs = new Jobs(undefined, (job) => checks.push(job.id));

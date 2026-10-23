@@ -37,7 +37,19 @@ For a long-running job, the model can request a one-time check-in at creation:
 }
 ```
 
-After five minutes, if the job is still running, Pi queues its current output for the assistant to review. This does not stop or restart the command. The check-in is one-time, not recurring; omit the parameter for completion-only notifications. The delay must be a whole number from 1 to 2,147,483 seconds. Completion, cancellation, and session shutdown clear pending reminders. A reminder already queued behind a busy conversation may be read after the job finishes.
+After five minutes, if the job is still running, Pi queues its current output for the assistant to review. This does not stop or restart the command. The check-in is one-time, not recurring; omit the parameter at creation for completion-only notifications. The delay must be a whole number from 1 to 2,147,483 seconds. Completion, cancellation, and session shutdown clear pending reminders. A reminder already queued behind a busy conversation may be read after the job finishes.
+
+To inspect an existing job and schedule its next check-in without restarting it:
+
+```json
+{
+  "action": "status",
+  "id": "1",
+  "checkAfterSeconds": 300
+}
+```
+
+The delay starts from this call and replaces any pending reminder for that job. After each check-in, the assistant can choose whether and when to schedule another. Status without `checkAfterSeconds` leaves the pending reminder unchanged. Scheduling requires a job ID; finished or stopping jobs return their status without scheduling a reminder. Already-delivered reminders cannot be withdrawn.
 
 ## Scope
 

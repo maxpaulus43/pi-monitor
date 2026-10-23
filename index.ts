@@ -165,20 +165,24 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "monitor",
     label: "Monitor",
-    description: "Run a command in the background and return immediately. Completion automatically queues an assistant follow-up, so do not poll with repeated tool calls. Use watch commands (e.g. gh pr checks 123 --watch) for ongoing checks. Commands run with normal shell permissions, no stdin, and last only for this Pi session. Output is bounded. Use status to inspect or stop to cancel a job. Do not start duplicate monitors.",
+    description: "Run a command in the background and return immediately. Completion automatically queues an assistant follow-up, so do not poll with repeated tool calls. Use watch commands (e.g. gh pr checks 123 --watch) for ongoing checks. Commands run with normal shell permissions, no stdin, and last only for this Pi session. Output is bounded. Use status to inspect or stop to cancel a job. To check again later, use status with the existing id and checkAfterSeconds; this replaces any pending reminder without restarting the command. Do not start duplicate monitors.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("start"), Type.Literal("status"), Type.Literal("stop")]),
       command: Type.Optional(Type.String({ description: "Shell command for start" })),
       title: Type.Optional(Type.String({ description: "Short job name" })),
       checkAfterSeconds: Type.Optional(Type.Integer({
         minimum: 1, maximum: 2147483,
-        description: "For start only: queue a one-time check-in with current output after this many seconds if still running. Wakes the assistant without interrupting the current response. Omit to receive only completion.",
+        description: "For start or status with an id: queue a one-time check-in with current output after this many seconds if still running. Replaces any pending reminder; does not restart the command. Omit on status to leave the current reminder unchanged. Wakes the assistant without interrupting the current response.",
       })),
       id: Type.Optional(Type.String({ description: "Job ID for stop or a specific status" })),
     }),
     async execute(_callId, params, signal, _onUpdate, ctx) {
       if (signal?.aborted) throw new Error("Cancelled");
       if (!jobs) throw new Error("Monitor session has not started");
+      if (params.checkAfterSeconds !== undefined) {
+        if (params.action === "stop") throw new Error("checkAfterSeconds is only supported for start or status");
+        if (params.action === "status" && !params.id) throw new Error("id is required to schedule a check-in with status");
+      }
       let text: string;
       if (params.action === "start") {
         if (!params.command) throw new Error("command is required for start");
@@ -192,6 +196,12 @@ export default function (pi: ExtensionAPI) {
         text = describe(job);
       } else {
         text = params.id ? describe(jobs.get(params.id)) : [...jobs.jobs.values()].map(summary).join("\n") || "No monitors";
+        if (params.id && params.checkAfterSeconds !== undefined) {
+          const scheduled = jobs.scheduleCheck(params.id, params.checkAfterSeconds);
+          text += scheduled
+            ? `\nOne-time check-in scheduled after ${params.checkAfterSeconds} seconds if still running. Any pending reminder was replaced.`
+            : "\nNo check-in scheduled: monitor is no longer running or is stopping.";
+        }
       }
       return { content: [{ type: "text", text }], details: undefined };
     },
