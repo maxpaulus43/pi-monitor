@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
@@ -11,6 +12,8 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
   timeout: 5000,
 }, async () => {
   const { loadExtensions } = await import(pathToFileURL(`${host}/dist/core/extensions/loader.js`).href);
+  const hostRequire = createRequire(`${host}/package.json`);
+  const { getKeybindings, setKeybindings, KeybindingsManager } = await import(hostRequire.resolve("@earendil-works/pi-tui"));
   const result = await loadExtensions([`${process.cwd()}/index.ts`], process.cwd());
   assert.deepEqual(result.errors, []);
   const extension = result.extensions[0];
@@ -41,7 +44,7 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
             assert.equal(lines[1], `│${" ".repeat(width - 2)}│`);
             assert.equal(lines.at(-2), lines[1]);
             assert.ok(lines.slice(1, -1).every((line) =>
-              line.startsWith("│ ") && line.endsWith(" │") && visibleWidth(line) === width));
+              line.startsWith("│ ") && / [│┃]$/.test(line) && visibleWidth(line) === width));
           }
         }
         await interact(component, () => done);
@@ -69,6 +72,19 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     assert.ok(expanded.render(80).join("\n").includes(output));
     assert.equal(message.content, original);
     assert.equal(renderer(message, { expanded: false, outputPad: 1 }, theme).render(80).length, 1);
+    const previous = getKeybindings();
+    try {
+      for (const shortcut of ["ctrl+o", "ctrl+g"]) {
+        setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: shortcut } }));
+        assert.ok(stripVTControlCharacters(collapsed.render(80)[0]).includes(`(${shortcut} to expand)`));
+        const longMessage = { ...message, content: `Monitor ${"long title ".repeat(30)}` };
+        const longLine = renderer(longMessage, { expanded: false, outputPad: 1 }, theme).render(80)[0];
+        assert.ok(stripVTControlCharacters(longLine).includes(`(${shortcut} to expand)`));
+        assert.ok(visibleWidth(longLine) <= 80);
+      }
+      setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: [] } }));
+      assert.ok(!collapsed.render(80)[0].includes("to expand"));
+    } finally { setKeybindings(previous); }
   };
   await dispatch("session_start");
   try {
@@ -77,6 +93,7 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     assert.match(started.content[0].text, /Started in background/);
     assert.match(widget.render(80)[0], /CI.*running/);
     interact = async (component, isClosed) => {
+      assert.ok(!component.render(80).some((line) => line.endsWith("┃")));
       component.handleInput("d");
       assert.equal(isClosed(), false);
       assert.match((await execute({ action: "status", id: "1" })).content[0].text, /running/);
@@ -122,6 +139,13 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     interact = async (component) => {
       const tail = component.render(80);
       assert.match(tail.join("\n"), /line-40/);
+      assert.ok(tail.at(-4).endsWith("┃"));
+      assert.ok(!tail[3].endsWith("┃"));
+      tui.terminal.rows = 16;
+      const resized = component.render(80);
+      assert.ok(resized.at(-4).endsWith("┃"));
+      assert.equal(resized.filter((line) => line.endsWith("┃")).length, 1);
+      tui.terminal.rows = 24;
       assert.deepEqual(component.handleMouse({ type: "wheel", wheelDelta: -3 }), { handled: true });
       const scrolled = component.render(80);
       assert.notDeepEqual(scrolled, tail);
@@ -129,6 +153,10 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
       component.handleMouse({ type: "wheel", wheelDelta: -1000 });
       const top = component.render(80);
       assert.match(top.join("\n"), /Command:/);
+      assert.ok(top[3].endsWith("┃"));
+      assert.ok(!top.at(-4).endsWith("┃"));
+      assert.equal(top.filter((line) => line.endsWith("┃")).length,
+        tail.filter((line) => line.endsWith("┃")).length);
       component.handleMouse({ type: "wheel", wheelDelta: -3 });
       assert.deepEqual(component.render(80), top);
       component.handleMouse({ type: "wheel", wheelDelta: 1000 });

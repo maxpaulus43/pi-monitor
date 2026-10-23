@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, MouseRegion, Text, TruncatedText, truncateToWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { keyText, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey, MouseRegion, Text, TruncatedText, truncateToWidth, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { Jobs, clean, describe } from "./jobs.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -21,7 +21,16 @@ export default function (pi: ExtensionAPI) {
       const label = customType === "monitor-check" ? "Monitor check-in" : "Monitor result";
       if (expanded) return new Text(`${theme.fg("accent", `▾ ${label}`)}\n${content}`, outputPad, 0);
       const heading = content.split("\n").find((line) => line.startsWith("Monitor ")) ?? label;
-      return new TruncatedText(theme.fg("accent", `▸ ${heading}${customType === "monitor-check" ? " · check-in" : ""}`), outputPad, 0);
+      return {
+        render(width) {
+          const shortcut = keyText("app.tools.expand");
+          const hint = shortcut ? ` (${shortcut} to expand)` : "";
+          const headingWidth = Math.max(0, width - 2 * outputPad - visibleWidth(hint));
+          const title = truncateToWidth(`▸ ${heading}${customType === "monitor-check" ? " · check-in" : ""}`, headingWidth);
+          return new TruncatedText(theme.fg("accent", title) + theme.fg("dim", hint), outputPad, 0).render(width);
+        },
+        invalidate() {},
+      };
     });
   }
 
@@ -42,8 +51,11 @@ export default function (pi: ExtensionAPI) {
             const job = list[selected];
             const lines = describe(job).split("\n");
             const count = Math.max(1, Math.min(20, tui.terminal.rows - 12));
-            scroll = Math.min(scroll, Math.max(0, lines.length - count));
+            const maxScroll = Math.max(0, lines.length - count);
+            scroll = Math.min(scroll, maxScroll);
             const end = lines.length - scroll;
+            const thumbSize = Math.max(1, Math.floor(count * count / lines.length));
+            const thumbStart = maxScroll ? Math.round((count - thumbSize) * (maxScroll - scroll) / maxScroll) : 0;
             const content = [
               "",
               theme.fg("accent", summary(job)),
@@ -54,8 +66,11 @@ export default function (pi: ExtensionAPI) {
             const border = (text: string) => theme.fg("border", text);
             return [
               border(`╭${"─".repeat(Math.max(0, width - 2))}╮`),
-              ...content.map((line) => border("│") + " " +
-                truncateToWidth(line, Math.max(0, width - 4), "…", true) + " " + border("│")),
+              ...content.map((line, index) => {
+                const isThumb = maxScroll > 0 && index - 2 >= thumbStart && index - 2 < thumbStart + thumbSize;
+                return border("│") + " " + truncateToWidth(line, Math.max(0, width - 4), "…", true) + " " +
+                  (isThumb ? theme.fg("accent", "┃") : border("│"));
+              }),
               border(`╰${"─".repeat(Math.max(0, width - 2))}╯`),
             ].map((line) => truncateToWidth(line, width));
           },
