@@ -15,14 +15,21 @@ export default function (pi: ExtensionAPI) {
   };
 
   for (const customType of ["monitor-check", "monitor-result"]) {
+    const expansion = new WeakMap<object, { open: boolean; globalExpanded: boolean }>();
     pi.registerMessageRenderer(customType, (message, { expanded, outputPad }, theme) => {
+      let state = expansion.get(message);
+      if (!state || state.globalExpanded !== expanded) {
+        state = { open: expanded, globalExpanded: expanded };
+        expansion.set(message, state);
+      }
+      const viewState = state;
       const content = clean(typeof message.content === "string" ? message.content :
         message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
       const label = customType === "monitor-check" ? "Monitor check-in" : "Monitor result";
-      if (expanded) return new Text(`${theme.fg("accent", `▾ ${label}`)}\n${content}`, outputPad, 0);
       const heading = content.split("\n").find((line) => line.startsWith("Monitor ")) ?? label;
-      return {
+      return new MouseRegion({
         render(width) {
+          if (viewState.open) return new Text(`${theme.fg("accent", `▾ ${label}`)}\n${content}`, outputPad, 0).render(width);
           const shortcut = keyText("app.tools.expand");
           const hint = shortcut ? ` (${shortcut} to expand)` : "";
           const headingWidth = Math.max(0, width - 2 * outputPad - visibleWidth(hint));
@@ -30,7 +37,11 @@ export default function (pi: ExtensionAPI) {
           return new TruncatedText(theme.fg("accent", title) + theme.fg("dim", hint), outputPad, 0).render(width);
         },
         invalidate() {},
-      };
+      }, (event) => {
+        if (event.type !== "click" || event.button !== "left" || event.y !== 0) return;
+        viewState.open = !viewState.open;
+        return { handled: true, render: true };
+      });
     });
   }
 
@@ -67,9 +78,10 @@ export default function (pi: ExtensionAPI) {
             return [
               border(`╭${"─".repeat(Math.max(0, width - 2))}╮`),
               ...content.map((line, index) => {
-                const isThumb = maxScroll > 0 && index - 2 >= thumbStart && index - 2 < thumbStart + thumbSize;
-                return border("│") + " " + truncateToWidth(line, Math.max(0, width - 4), "…", true) + " " +
-                  (isThumb ? theme.fg("accent", "┃") : border("│"));
+                const isTrack = maxScroll > 0 && index >= 2 && index < count + 2;
+                const isThumb = isTrack && index - 2 >= thumbStart && index - 2 < thumbStart + thumbSize;
+                const edge = isThumb ? theme.fg("accent", "█") : isTrack ? theme.fg("dim", "░") : border("│");
+                return border("│") + " " + truncateToWidth(line, Math.max(0, width - 4), "…", true) + " " + edge;
               }),
               border(`╰${"─".repeat(Math.max(0, width - 2))}╯`),
             ].map((line) => truncateToWidth(line, width));
