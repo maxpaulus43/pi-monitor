@@ -5,7 +5,7 @@
     "type": "module",
     "repository": {
         "type": "git",
-        "url": "https://github.com/maxpaulus43/pi-monitor"
+        "url": "git+https://github.com/maxpaulus43/pi-monitor.git"
     },
     "files": [
         "index.ts",
