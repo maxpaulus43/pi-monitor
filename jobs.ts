@@ -15,6 +15,7 @@ interface Job {
   child?: ChildProcess;
   done?: Promise<void>;
   stopping?: Promise<void>;
+  checkTimer?: ReturnType<typeof setTimeout>;
   error?: string;
   code?: number | null;
   signal?: NodeJS.Signals | null;
@@ -28,17 +29,24 @@ export function clean(text: string) {
 export class Jobs {
   jobs = new Map<string, Job>();
   onFinish: (job: Job) => void;
+  onCheck: (job: Job) => void;
   nextId = 1;
   closed = false;
 
-  constructor(onFinish: (job: Job) => void = () => {}) {
+  constructor(onFinish: (job: Job) => void = () => {}, onCheck: (job: Job) => void = () => {}) {
     this.onFinish = onFinish;
+    this.onCheck = onCheck;
   }
 
-  start(command: string, cwd: string, title = command) {
+  start(command: string, cwd: string, title = command, checkAfterSeconds?: number) {
     if (this.closed) throw new Error("Monitor session is closed");
     if (process.platform === "win32") throw new Error("Monitor requires macOS or Linux");
     if (!command.trim()) throw new Error("Command must not be empty");
+    // Node timers overflow above 2^31 - 1 milliseconds.
+    if (checkAfterSeconds !== undefined &&
+        (!Number.isInteger(checkAfterSeconds) || checkAfterSeconds < 1 || checkAfterSeconds > 2147483)) {
+      throw new Error("checkAfterSeconds must be an integer between 1 and 2147483");
+    }
     const job: Job = {
       id: String(this.nextId++), command, cwd, title,
       status: "running", output: "", truncated: false, started: Date.now(),
@@ -62,6 +70,7 @@ export class Jobs {
     child.on("error", (error) => { job.error = error.message; });
     job.done = new Promise((resolve) => {
       child.on("close", (code, signal) => {
+        clearTimeout(job.checkTimer);
         job.code = code;
         job.signal = signal;
         job.ended = Date.now();
@@ -70,6 +79,11 @@ export class Jobs {
         resolve();
       });
     });
+    if (checkAfterSeconds !== undefined) {
+      job.checkTimer = setTimeout(() => {
+        if (!this.closed && job.status === "running" && !job.stopping) this.onCheck(job);
+      }, checkAfterSeconds * 1000);
+    }
     return job;
   }
 
@@ -81,6 +95,7 @@ export class Jobs {
 
   stop(id: string) {
     const job = this.get(id);
+    clearTimeout(job.checkTimer);
     if (job.stopping) return job.stopping;
     if (job.status !== "running") return Promise.resolve();
     const kill = (signal: NodeJS.Signals) => {

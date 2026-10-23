@@ -66,6 +66,61 @@ test("shutdown suppresses completion delivery and rejects new jobs", async () =>
   assert.throws(() => jobs.start("true", cwd), /closed/);
 });
 
+test("scheduled check-in fires once while running; omitted delay stays silent", async (t) => {
+  const checks = [];
+  const jobs = new Jobs(undefined, (job) => checks.push(job.id));
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const job = jobs.start("sleep 30", cwd, "long job", 10);
+    jobs.start("sleep 30", cwd);
+    t.mock.timers.tick(9999);
+    assert.deepEqual(checks, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(checks, [job.id]);
+    assert.equal(job.status, "running");
+    t.mock.timers.tick(20000);
+    assert.deepEqual(checks, [job.id]);
+  } finally {
+    t.mock.timers.reset();
+    await jobs.close();
+  }
+});
+
+test("completion, cancellation, and shutdown cancel pending check-ins", async (t) => {
+  const checks = [];
+  const jobs = new Jobs(undefined, (job) => checks.push(job.id));
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const finished = jobs.start("true", cwd, "quick job", 10);
+    await finished.done;
+    t.mock.timers.tick(10000);
+    assert.deepEqual(checks, []);
+    const cancelled = jobs.start("sleep 30", cwd, "cancelled job", 10);
+    const stopped = jobs.stop(cancelled.id);
+    t.mock.timers.tick(10000);
+    await stopped;
+    await cancelled.done;
+    assert.deepEqual(checks, []);
+    jobs.start("sleep 30", cwd, "shutdown job", 10);
+    const closed = jobs.close();
+    t.mock.timers.tick(10000);
+    await closed;
+    assert.deepEqual(checks, []);
+  } finally {
+    t.mock.timers.reset();
+    await jobs.close();
+  }
+});
+
+test("rejects invalid check-in delays before spawning", async () => {
+  const jobs = new Jobs();
+  for (const seconds of [0, -1, 0.5, NaN, Infinity, 2147484]) {
+    assert.throws(() => jobs.start("true", cwd, "invalid", seconds), /checkAfterSeconds/);
+  }
+  assert.equal(jobs.jobs.size, 0);
+  await jobs.close();
+});
+
 test("rejects empty commands and unknown ids", async () => {
   const jobs = new Jobs();
   assert.throws(() => jobs.start("  ", cwd), /empty/);

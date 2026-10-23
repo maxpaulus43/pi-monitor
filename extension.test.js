@@ -94,5 +94,15 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     assert.equal(messages.length, 1);
     await dispatch("session_start");
     assert.equal((await execute({ action: "status" })).content[0].text, "No monitors");
+    const scheduled = await execute({
+      action: "start", command: "printf progress; sleep 30", checkAfterSeconds: 1,
+    });
+    assert.match(scheduled.content[0].text, /check-in scheduled after 1 seconds/);
+    while (messages.length < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(messages[1].message.customType, "monitor-check");
+    assert.match(messages[1].message.content, /Scheduled check-in:[\s\S]*running[\s\S]*progress/);
+    assert.deepEqual(messages[1].options, { triggerTurn: true, deliverAs: "followUp" });
+    await execute({ action: "stop", id: "1" });
+    assert.equal(messages.length, 2);
   } finally { await dispatch("session_shutdown"); }
 });

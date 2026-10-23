@@ -14,7 +14,7 @@ Ask Pi:
 
 > Monitor PR #123's CI. When it finishes, summarize any failures.
 
-Pi can start `gh pr checks 123 --watch` with the `monitor` tool. The command handles polling; the extension listens for output and exit. Monitoring itself uses no model calls. Completion triggers a normal, billable assistant turn. When Pi is busy, the result queues as a follow-up rather than interrupting.
+Pi can start `gh pr checks 123 --watch` with the `monitor` tool. The command handles polling; the extension listens for output and exit. Running the background command uses no model calls. Completion and optional scheduled check-ins trigger normal, billable assistant turns. When Pi is busy, the result queues as a follow-up rather than interrupting.
 
 ## Controls
 
@@ -25,6 +25,18 @@ Pi can start `gh pr checks 123 --watch` with the `monitor` tool. The command han
 - The widget hides when no jobs are running. Finished jobs stay in `/monitors` until dismissed. Dismissing the last job closes the viewer; messages already delivered to the conversation remain.
 
 The model-facing `monitor` tool accepts `action: "start" | "status" | "stop"`, plus `command`, an optional `title`, or a job `id`. Status without an ID lists jobs. Cancellation does not trigger an automatic follow-up.
+
+For a long-running job, the model can request a one-time check-in at creation:
+
+```json
+{
+  "action": "start",
+  "command": "gh pr checks 123 --watch",
+  "checkAfterSeconds": 300
+}
+```
+
+After five minutes, if the job is still running, Pi queues its current output for the assistant to review. This does not stop or restart the command. The check-in is one-time, not recurring; omit the parameter for completion-only notifications. The delay must be a whole number from 1 to 2,147,483 seconds. Completion, cancellation, and session shutdown clear pending reminders. A reminder already queued behind a busy conversation may be read after the job finishes.
 
 ## Scope
 
