@@ -49,6 +49,34 @@ After five minutes, if the job is still running, Pi queues its current output fo
 - This is not a sandbox. Only run commands you trust. Command output enters the conversation; avoid commands that print secrets. CI commands require your existing `gh` authentication.
 - Keep Pi open for automatic follow-ups. Headless one-shot invocations are not a persistent monitor service.
 
+## Releases
+
+This package uses the same changelogger hook and GitHub Actions publishing workflow as `pi-cline` and `pi-linear`.
+
+After cloning, install dependencies and the local hook:
+
+```sh
+npm install
+npx --no-install changelogger install
+```
+
+The pre-commit hook generates and stages a changelog entry when the staged package version changes. It uses local LM Studio when available and falls back to commit subjects.
+
+The `Publish` workflow runs on pushes to `main` or manual dispatch. If the local version differs from npm, it publishes `@maxpaulus/pi-monitor`, creates a version tag, and creates a GitHub release using `CHANGELOG.md`.
+
+Before the first release, create/connect `maxpaulus43/pi-monitor` on GitHub and configure the npm package's trusted publisher for that repository and `publish.yml`. Repository metadata alone does not create a Git remote or configure npm authentication. The workflow uses OIDC, not an `NPM_TOKEN` secret.
+
+For subsequent releases:
+
+```sh
+npm version patch --no-git-tag-version
+git add package.json package-lock.json
+git commit -m "Release next version"
+git push origin main
+```
+
+The commit hook stages the changelog; the workflow creates the tag after publishing. Pushing an unpublished version to `main` publishes it automatically.
+
 ## Tests
 
 ```sh
