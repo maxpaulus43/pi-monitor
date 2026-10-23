@@ -20,7 +20,8 @@ Pi can start `gh pr checks 123 --watch` with the `monitor` tool. The command han
 
 - `/monitors` or **Ctrl+Shift+M** opens the live viewer.
 - In fullscreen Pi, click the monitor widget to open it.
-- **Left/right** switches jobs; **up/down** scrolls output.
+- **Left/right** switches jobs; **up/down** scrolls output. In fullscreen Pi, the mouse wheel also scrolls inside the viewer; regular terminal mode leaves the wheel to terminal scrollback.
+- Check-in and completion messages collapse to one line. Use Pi's **Ctrl+O** toggle to expand or collapse their full output.
 - **s** stops a running job; **d** dismisses a finished job; **Escape** closes the viewer.
 - The widget hides when no jobs are running. Finished jobs stay in `/monitors` until dismissed. Dismissing the last job closes the viewer; messages already delivered to the conversation remain.
 

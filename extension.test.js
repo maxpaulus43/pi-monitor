@@ -55,6 +55,21 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
   };
   const tool = extension.tools.get("monitor").definition;
   const execute = (params) => tool.execute("test", params, new AbortController().signal, undefined, ctx);
+  const checkMessageRendering = (message, output) => {
+    const original = message.content;
+    const renderer = extension.messageRenderers.get(message.customType);
+    assert.ok(renderer);
+    const collapsed = renderer(message, { expanded: false, outputPad: 1 }, theme);
+    assert.equal(collapsed.render(80).length, 1);
+    assert.match(collapsed.render(80)[0], /▸.*Monitor/);
+    assert.ok(!collapsed.render(80)[0].includes(output));
+    assert.ok(collapsed.render(20).every((line) => visibleWidth(line) <= 20));
+    const expanded = renderer(message, { expanded: true, outputPad: 1 }, theme);
+    assert.match(expanded.render(80).join("\n"), /▾.*Monitor/);
+    assert.ok(expanded.render(80).join("\n").includes(output));
+    assert.equal(message.content, original);
+    assert.equal(renderer(message, { expanded: false, outputPad: 1 }, theme).render(80).length, 1);
+  };
   await dispatch("session_start");
   try {
     assert.deepEqual(widget.render(40), []);
@@ -71,6 +86,7 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     assert.equal(messages.length, 1);
     assert.match(messages[0].message.content, /completed[\s\S]*done/);
     assert.deepEqual(messages[0].options, { triggerTurn: true, deliverAs: "followUp" });
+    checkMessageRendering(messages[0].message, "done");
     assert.deepEqual(widget.render(80), []);
     assert.match((await execute({ action: "status" })).content[0].text, /completed/);
     await execute({ action: "start", command: "sleep 30" });
@@ -95,13 +111,33 @@ test("Pi loads the extension, renders the viewer, and queues completion", {
     await dispatch("session_start");
     assert.equal((await execute({ action: "status" })).content[0].text, "No monitors");
     const scheduled = await execute({
-      action: "start", command: "printf progress; sleep 30", checkAfterSeconds: 1,
+      action: "start", command: "printf 'progress\\n'; printf 'line-%s\\n' {1..40}; sleep 30", title: "Long job", checkAfterSeconds: 1,
     });
     assert.match(scheduled.content[0].text, /check-in scheduled after 1 seconds/);
     while (messages.length < 2) await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(messages[1].message.customType, "monitor-check");
     assert.match(messages[1].message.content, /Scheduled check-in:[\s\S]*running[\s\S]*progress/);
     assert.deepEqual(messages[1].options, { triggerTurn: true, deliverAs: "followUp" });
+    checkMessageRendering(messages[1].message, "progress");
+    interact = async (component) => {
+      const tail = component.render(80);
+      assert.match(tail.join("\n"), /line-40/);
+      assert.deepEqual(component.handleMouse({ type: "wheel", wheelDelta: -3 }), { handled: true });
+      const scrolled = component.render(80);
+      assert.notDeepEqual(scrolled, tail);
+      assert.ok(!scrolled.join("\n").includes("line-40"));
+      component.handleMouse({ type: "wheel", wheelDelta: -1000 });
+      const top = component.render(80);
+      assert.match(top.join("\n"), /Command:/);
+      component.handleMouse({ type: "wheel", wheelDelta: -3 });
+      assert.deepEqual(component.render(80), top);
+      component.handleMouse({ type: "wheel", wheelDelta: 1000 });
+      assert.deepEqual(component.render(80), tail);
+      component.handleMouse({ type: "wheel", wheelDelta: 3 });
+      assert.deepEqual(component.render(80), tail);
+      assert.equal(component.handleMouse({ type: "click" }), undefined);
+    };
+    await extension.commands.get("monitors").handler("", ctx);
     await execute({ action: "stop", id: "1" });
     assert.equal(messages.length, 2);
   } finally { await dispatch("session_shutdown"); }

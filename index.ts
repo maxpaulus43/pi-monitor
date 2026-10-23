@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, MouseRegion, truncateToWidth } from "@earendil-works/pi-tui";
+import { Key, matchesKey, MouseRegion, Text, TruncatedText, truncateToWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { Jobs, clean, describe } from "./jobs.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -13,6 +13,17 @@ export default function (pi: ExtensionAPI) {
     const seconds = Math.floor(((job.ended ?? Date.now()) - job.started) / 1000);
     return clean(`#${job.id} ${job.title} · ${job.status} · ${seconds}s`).replace(/\n/g, " ");
   };
+
+  for (const customType of ["monitor-check", "monitor-result"]) {
+    pi.registerMessageRenderer(customType, (message, { expanded, outputPad }, theme) => {
+      const content = clean(typeof message.content === "string" ? message.content :
+        message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+      const label = customType === "monitor-check" ? "Monitor check-in" : "Monitor result";
+      if (expanded) return new Text(`${theme.fg("accent", `▾ ${label}`)}\n${content}`, outputPad, 0);
+      const heading = content.split("\n").find((line) => line.startsWith("Monitor ")) ?? label;
+      return new TruncatedText(theme.fg("accent", `▸ ${heading}${customType === "monitor-check" ? " · check-in" : ""}`), outputPad, 0);
+    });
+  }
 
   async function view(ctx: ExtensionContext) {
     if (ctx.mode !== "tui" || viewing) return;
@@ -47,6 +58,12 @@ export default function (pi: ExtensionAPI) {
                 truncateToWidth(line, Math.max(0, width - 4), "…", true) + " " + border("│")),
               border(`╰${"─".repeat(Math.max(0, width - 2))}╯`),
             ].map((line) => truncateToWidth(line, width));
+          },
+          handleMouse(event: TuiMouseEvent) {
+            if (event.type !== "wheel") return;
+            scroll = Math.max(0, scroll - (event.wheelDelta ?? 0));
+            tui.requestRender();
+            return { handled: true };
           },
           handleInput(data) {
             if (keys.matches(data, "tui.select.cancel")) { done(); return; }
