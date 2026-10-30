@@ -1,6 +1,6 @@
 import { Type } from "@earendil-works/pi-ai";
 import { keyText, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, MouseRegion, Text, TruncatedText, truncateToWidth, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import { Key, matchesKey, MouseRegion, Text, TruncatedText, truncateToWidth, visibleWidth, wrapTextWithAnsi, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { Jobs, clean, describe } from "./jobs.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -60,7 +60,7 @@ export default function (pi: ExtensionAPI) {
             if (!list.length) return [];
             selected = Math.min(selected, list.length - 1);
             const job = list[selected];
-            const lines = describe(job).split("\n");
+            const lines = wrapTextWithAnsi(describe(job), Math.max(1, width - 4));
             const count = Math.max(1, Math.min(20, tui.terminal.rows - 12));
             const maxScroll = Math.max(0, lines.length - count);
             scroll = Math.min(scroll, maxScroll);
