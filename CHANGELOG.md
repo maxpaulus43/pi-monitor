@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.3 - 2026-10-30
+- wrap text in monitor window
+- wrap text in monitor window
 ## 1.0.2 - 2026-10-30
 - fix provenance
 ## 1.0.1 - 2026-10-23
