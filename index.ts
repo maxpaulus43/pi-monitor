@@ -165,7 +165,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "monitor",
     label: "Monitor",
-    description: "Run a command in the background and return immediately. Completion automatically queues an assistant follow-up, so do not poll with repeated tool calls. Use watch commands (e.g. gh pr checks 123 --watch) for ongoing checks. Commands run with normal shell permissions, no stdin, and last only for this Pi session. Output is bounded. Use status to inspect or stop to cancel a job. To check again later, use status with the existing id and checkAfterSeconds; this replaces any pending reminder without restarting the command. Do not start duplicate monitors.",
+    description: "Run a command in the background and return immediately. Good for background tasks: dev servers, long-running test suites, periodic checks. Completion automatically queues an assistant follow-up, so do not poll with repeated tool calls. Use watch commands (e.g. gh pr checks 123 --watch) for ongoing checks. Commands run with normal shell permissions, no stdin, and last only for this Pi session. Output is bounded. Use status to inspect or stop to cancel a job. To check again later, use status with the existing id and checkAfterSeconds; this replaces any pending reminder without restarting the command. Do not start duplicate monitors.",
     parameters: Type.Object({
       action: Type.Union([Type.Literal("start"), Type.Literal("status"), Type.Literal("stop")]),
       command: Type.Optional(Type.String({ description: "Shell command for start" })),

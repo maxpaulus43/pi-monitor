@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.0.2 - 2026-10-30
+- fix provenance
 ## 1.0.1 - 2026-10-23
 - Support scheduling check-ins on existing jobs via `status` action with `checkAfterSeconds`
 - Replace pending reminders when scheduling a new check-in without restarting the command
